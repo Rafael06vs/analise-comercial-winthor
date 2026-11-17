@@ -1,127 +1,144 @@
 # Análise comercial de uma distribuidora
 
-Montei esse projeto para organizar três consultas que uso como referência no trabalho: clientes sem compras recentes de um fornecedor, quantidade vendida de um produto e resumo de vendas por fornecedor.
+**SQL · Python · SQLite · Excel · Linux · Streamlit**
 
-A ideia foi deixar a execução simples. Não faz sentido ter que apagar o banco ou mexer no código toda vez que quero conferir um relatório.
+Criei este projeto a partir de algumas situações que aparecem na rotina comercial de uma distribuidora: descobrir quais clientes deixaram de comprar uma marca, conferir a quantidade vendida de um produto e entender o faturamento por fornecedor.
 
-## Como rodar no Windows
+O maior cuidado foi definir **o que realmente conta como venda**. Uma nota cancelada não pode entrar no resultado, bonificação não é faturamento e quantidade em unidades não é a mesma coisa que quantidade em caixas.
 
-1. Instale Python 3 (caso ainda não tenha).
-2. Extraia a pasta do projeto.
-3. Dê dois cliques em **`ATUALIZAR_RELATORIOS.bat`**.
-4. Abra **`relatorios/analise_comercial.xlsx`**. Os CSVs também ficam em `dados/saida`.
+O projeto usa **dados fictícios**, com estrutura inspirada em consultas que faço no WinThor. Não existe conexão com o ERP ou utilização de informações reais da empresa.
 
-Para gerar os relatórios pelo `.bat` não precisa instalar bibliotecas adicionais. As dependências listadas em `requirements.txt` são usadas apenas pelo dashboard. **Feche o Excel antes de atualizar**, caso ele esteja aberto.
+## O que dá para analisar
 
-Se preferir o terminal:
+- **Clientes sem compras recentes:** identifica clientes que não compraram produtos de um fornecedor no período definido, incluindo aqueles que nunca compraram essa marca.
+- **Vendas por produto:** consulta unidades vendidas, unidades bonificadas, faturamento e caixas equivalentes.
+- **Resumo por fornecedor:** consolida quantidade de notas, unidades e faturamento de vendas válidas.
+- **Dashboard:** permite filtrar filial, fornecedor e período, acompanhar indicadores e baixar resultados em CSV ou Excel.
+
+No exemplo inicial, utilizei a **filial 1**, o **fornecedor 658** e o **produto 20690**. A consulta do produto considera **06/11/2026 a 17/11/2026**; a análise de clientes utiliza uma janela de **90 dias**. Esses parâmetros podem ser ajustados no `config.json` para os relatórios e nos filtros do dashboard.
+
+## Como funciona
+
+1. Os arquivos CSV de `dados/entrada` representam clientes, produtos, notas e movimentações.
+2. O Python carrega os dados em um banco **SQLite temporário, em memória**.
+3. As consultas aplicam as regras comerciais e calculam os indicadores.
+4. O processamento gera arquivos CSV em `dados/saida` e um relatório Excel em `relatorios/analise_comercial.xlsx`.
+5. O dashboard em Streamlit apresenta os dados no navegador, com filtros e exportação.
+
+O banco é recriado a cada execução, evitando o erro de tabela já existente. O arquivo antigo `analise.db` não é necessário para executar a versão atual.
+
+## Testar no Windows
+
+É necessário ter o **Python instalado**.
+
+1. Clique em **Code → Download ZIP** neste repositório e extraia os arquivos.
+2. Entre na pasta que contém `dashboard.py`, `config.json` e os arquivos `.bat`.
+3. Para atualizar os relatórios, dê dois cliques em **`ATUALIZAR_RELATORIOS.bat`**.
+4. Para abrir o painel interativo, dê dois cliques em **`ABRIR_DASHBOARD.bat`**.
+5. Abra no navegador o endereço indicado pelo terminal, normalmente `http://localhost:8501`.
+
+Na primeira abertura do dashboard, o arquivo `.bat` pode precisar instalar as bibliotecas, portanto é necessário acesso à internet. Caso apareça um erro de compatibilidade, utilize uma versão estável do Python compatível com as dependências do projeto, como Python 3.12 ou 3.13.
+
+### Executar pelo terminal (PowerShell)
+
+Na pasta do projeto:
+
+```powershell
+python -m pip install -r requirements-dashboard.txt
+python scripts/analisar.py
+python -m streamlit run dashboard.py
+```
+
+O processamento dos relatórios também pode ser executado separadamente, sem abrir o dashboard:
 
 ```powershell
 python scripts/analisar.py
 ```
 
-## Como rodar no Linux
-
-```bash
-python3 scripts/analisar.py
-```
-
-## O que o projeto faz
-
-- Lê os arquivos de exemplo em `dados/entrada`.
-- Cria um banco SQLite temporário a cada execução. Isso evita o erro `table clientes already exists` e impede duplicação por reexecução.
-- Calcula clientes sem compras do fornecedor na janela definida, inclusive os que nunca compraram.
-- Separa unidades vendidas e bonificadas do produto escolhido.
-- Gera um resumo de faturamento por fornecedor, sem bonificações ou notas canceladas.
-- Atualiza três CSVs e um Excel com abas e filtros.
-
-## Configurações
-
-As configurações estão em `config.json`. O exemplo acompanha a filial 1, fornecedor 658, produto 20690, referência em 17/11/2026 e intervalo de 90 dias. **Não precisa alterar código Python ou SQL** para gerar os relatórios novamente. Se quiser analisar outro período ou produto, pode mudar apenas os valores do arquivo de configuração.
-
-## Organização
-
-- `dados/entrada`: dados fictícios de clientes, produtos, notas e movimentações.
-- `dados/saida`: relatórios CSV gerados automaticamente.
-- `relatorios/analise_comercial.xlsx`: relatório Excel atualizado em cada execução.
-- `scripts/analisar.py`: processamento dos dados.
-- `scripts/gerar_dados.py`: recria a base fictícia, se você quiser começar do zero.
-- `sql/`: exemplos de estrutura e consultas SQL.
-- `tests/`: testes das regras de negócio.
-
-## Regras de negócio
-
-Considero venda válida a movimentação de saída (`CODOPER = 'S'`), condição 1, nota não cancelada e filial selecionada. Bonificação (condição 5) é apresentada separadamente e não entra no faturamento. A conversão para caixas depende da quantidade de unidades por caixa cadastrada na base de exemplo.
-
-Os dados são **fictícios**. O banco SQLite serve para simular a análise; o WinThor real utiliza Oracle. Este projeto não acessa o ERP nem expõe dados de clientes reais.
-
-## Próxima etapa
-
-Evoluir a análise com exportações anonimizadas e indicadores de logística, sem comprometer informações internas da empresa.
-
-## Testar o dashboard no navegador
-
-Além dos relatórios em Excel, incluí um painel com filtros de **filial, fornecedor, período e dias sem compra**. Nele dá para conferir faturamento, vendas por dia, produtos mais vendidos, unidades bonificadas, caixas equivalentes e clientes sem compra recente. Também dá para baixar os resultados filtrados em Excel ou CSV.
-
-**Os números são simulados.** O painel lê os arquivos da pasta `dados/entrada`; não acessa o WinThor nem usa dados reais da empresa.
-
-### Windows — jeito mais fácil
-
-1. Clique em **Code → Download ZIP** neste repositório e extraia o arquivo.
-2. Instale o Python, caso ainda não tenha.
-3. Abra a pasta que contém `dashboard.py`.
-4. Dê dois cliques em **`ABRIR_DASHBOARD.bat`**. Na primeira execução, ele instala as bibliotecas necessárias (é preciso internet).
-5. O navegador deverá abrir o painel. Se não abrir automaticamente, copie o endereço local indicado no terminal, normalmente `http://localhost:8501`.
-
-Se preferir usar o PowerShell, dentro da pasta do projeto:
-
-```powershell
-python -m pip install -r requirements-dashboard.txt
-python -m streamlit run dashboard.py
-```
-
-### Linux
+## Testar no Linux
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements-dashboard.txt
-streamlit run dashboard.py
+python -m pip install -r requirements-dashboard.txt
+python scripts/analisar.py
+python -m streamlit run dashboard.py
 ```
 
-Também é possível usar `bash ABRIR_DASHBOARD.sh` em um ambiente que permita instalar pacotes Python.
+Também existem scripts de execução: `scripts/rodar.sh` e `ABRIR_DASHBOARD.sh`.
 
-### Testar sem instalar nada — publicação online
+## Testar pelo navegador, sem instalar nada
 
-O repositório inclui `dashboard.py` e `requirements-dashboard.txt`, mas **a versão online só ficará disponível depois de fazer o deploy**. Para publicar gratuitamente no Streamlit Community Cloud:
+O código está preparado para publicação no **Streamlit Community Cloud**, mas o GitHub, sozinho, não executa o dashboard. O link público só poderá ser adicionado aqui depois que a aplicação for publicada e testada.
 
-1. Entre em [share.streamlit.io](https://share.streamlit.io/) e conecte sua conta GitHub.
+Para fazer o deploy:
+
+1. Acesse [Streamlit Community Cloud](https://share.streamlit.io/) e conecte o GitHub.
 2. Selecione o repositório `Rafael06vs/analise-comercial-winthor` e a branch `main`.
-3. Escolha **`analise-comercial-winthor/dashboard.py`** como arquivo principal, se o repositório mantiver a pasta interna mostrada no GitHub. Se os arquivos estiverem na raiz, use `dashboard.py`.
-4. O arquivo `requirements.txt` já inclui as dependências do dashboard; mantenha-o na mesma pasta do `dashboard.py`.
-5. Faça o deploy, teste o endereço gerado e só então adicione o link público ao início deste README.
+3. Indique o arquivo principal: `analise-comercial-winthor/dashboard.py` se o projeto continuar dentro da pasta interna; caso esteja na raiz, use `dashboard.py`.
+4. Verifique se o `requirements.txt` está na mesma pasta do dashboard e contém as dependências necessárias.
+5. Publique, teste o endereço gerado e adicione o link nesta seção.
 
-Não coloque dados internos, senhas ou exportações reais do ERP no repositório público.
+**Link do dashboard:** ainda não publicado.
 
-### Como os cálculos funcionam
+## Regras consideradas nas consultas
 
-- **Faturamento:** apenas notas não canceladas, movimentação de saída (`S`) e condição de venda `1`.
-- **Bonificações:** condição `5`, contabilizadas em unidades, sem somar ao faturamento.
-- **Caixas equivalentes:** unidades vendidas divididas pela quantidade de unidades por caixa cadastrada.
-- **Clientes sem compra:** todos os clientes da base sem venda do fornecedor na janela escolhida, inclusive quem nunca comprou dele.
-- **Período:** datas inicial e final inclusivas no painel. O recorte de clientes sem compra usa a data final como referência.
+| Regra | Tratamento |
+| --- | --- |
+| Filial | Apenas a filial selecionada |
+| Saída de mercadoria | `codoper = 'S'` |
+| Venda | `condvenda = 1` |
+| Bonificação | `condvenda = 5`, separada do faturamento |
+| Nota cancelada | Excluída das análises |
+| Clientes sem compra | Consulta com `NOT EXISTS`, incluindo clientes sem histórico da marca |
+| Caixas equivalentes | Unidades vendidas ÷ unidades por caixa cadastradas |
 
-O pipeline original continua funcionando com `ATUALIZAR_RELATORIOS.bat`, independentemente do dashboard.
+A quantidade em caixas é **equivalente**, podendo resultar em valor fracionado. Não deve ser confundida com a quantidade física de caixas fechadas expedidas.
 
+## Arquivos principais
 
-## Por que o VS Code mostra caracteres estranhos?
+```text
+analise-comercial-winthor/
+├── dados/
+│   ├── entrada/               # CSVs fictícios
+│   └── saida/                 # Relatórios CSV
+├── relatorios/
+│   └── analise_comercial.xlsx
+├── scripts/
+│   ├── analisar.py
+│   ├── gerar_dados.py
+│   └── rodar.sh
+├── sql/
+│   ├── 01_estrutura.sql
+│   └── 02_consultas.sql
+├── tests/
+│   └── test_regras.py
+├── dashboard.py
+├── config.json
+├── ATUALIZAR_RELATORIOS.bat
+├── ABRIR_DASHBOARD.bat
+├── ABRIR_DASHBOARD.sh
+├── requirements.txt
+└── requirements-dashboard.txt
+```
 
-`dados/analise.db` (SQLite) e `relatorios/analise_comercial.xlsx` (Excel) são arquivos **binários**. Não devem ser abertos no editor de texto do VS Code. Abra o `.xlsx` no Microsoft Excel ou LibreOffice; para explorar um `.db`, use um visualizador SQLite. A versão atual executa as consultas em memória e **não precisa** do arquivo `analise.db` antigo.
+## Testes
 
-## Atualizar e testar
+Para executar os testes automatizados:
 
-- Windows: execute `ATUALIZAR_RELATORIOS.bat` para gerar os CSVs e o Excel.
-- Dashboard: execute `ABRIR_DASHBOARD.bat` para abrir o Streamlit no navegador.
-- Terminal: `python scripts/analisar.py` e `python -m unittest discover -s tests -v`.
-- Linux: `bash scripts/rodar.sh` e `bash ABRIR_DASHBOARD.sh`.
+```powershell
+python -m unittest discover -s tests -v
+```
 
-O dashboard usa dados simulados. Para testar online, publique `dashboard.py` no Streamlit Community Cloud e informe o link aqui.
+Os testes verificam regras básicas, como o intervalo de 90 dias e a inclusão de clientes sem histórico de compra na consulta com `NOT EXISTS`.
+
+## Observações
+
+- O arquivo `.xlsx` deve ser aberto no **Excel**, e não como texto no VS Code.
+- O arquivo `.db` é um banco SQLite binário. A versão atual usa banco temporário em memória.
+- O relatório Excel é atualizado pelo processamento; o dashboard é uma interface separada que lê a base fictícia.
+- O projeto é um exercício de portfólio, não um sistema conectado à operação real.
+
+## Próximas melhorias
+
+Quero evoluir o projeto para incluir análise de frequência de compra, curva ABC de clientes e produtos, custo logístico por rota e previsão de demanda. A ideia é continuar trabalhando com problemas comerciais reais, mas sempre com bases públicas ou simuladas no repositório.
