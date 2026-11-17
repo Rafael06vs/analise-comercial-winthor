@@ -139,6 +139,3 @@ Os testes verificam regras básicas, como o intervalo de 90 dias e a inclusão d
 - O relatório Excel é atualizado pelo processamento; o dashboard é uma interface separada que lê a base fictícia.
 - O projeto é um exercício de portfólio, não um sistema conectado à operação real.
 
-## Próximas melhorias
-
-Quero evoluir o projeto para incluir análise de frequência de compra, curva ABC de clientes e produtos, custo logístico por rota e previsão de demanda. A ideia é continuar trabalhando com problemas comerciais reais, mas sempre com bases públicas ou simuladas no repositório.
