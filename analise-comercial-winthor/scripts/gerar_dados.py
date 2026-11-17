@@ -1,27 +1,87 @@
+"""Gera dados fictícios e reproduzíveis para demonstrar as análises."""
+
+import csv
+import random
+from datetime import date, timedelta
 from pathlib import Path
-import csv, random, datetime
-BASE = Path(__file__).resolve().parents[1] / 'dados' / 'entrada'
-BASE.mkdir(parents=True, exist_ok=True)
-rng = random.Random(658)
-def salvar(nome, cab, linhas):
-    with (BASE / nome).open('w', newline='', encoding='utf-8') as f:
-        w=csv.writer(f); w.writerow(cab); w.writerows(linhas)
-clientes=[(12000+i, f'Cliente exemplo {i:03d}', rng.choice(['São Paulo','Guarulhos','Osasco','Santo André','Jundiaí'])) for i in range(1,81)]
-produtos=[(20690,'20690','Pão de queijo tradicional',658,12),(20691,'20691','Pão de queijo coquetel',658,10),(20692,'20692','Waffle congelado',658,8),(30185,'30185','Batata congelada',7,6),(30186,'30186','Vegetais congelados',7,10)]
-notas=[]; mov=[]; trans=100000; mid=1
-for dia in range(150):
-    data=datetime.date(2026,7,1)+datetime.timedelta(days=dia)
-    if data>datetime.date(2026,11,17): break
-    for _ in range(rng.randint(1,8)):
-        cliente=rng.choice(clientes)[0]
-        prod=rng.choice(produtos)
-        trans+=1
-        cond=5 if rng.random()<.08 else 1
-        cancel=data.isoformat() if rng.random()<.025 else ''
-        notas.append((trans,cliente,1,data.isoformat(),cond,cancel))
-        mov.append((mid,trans,prod[0],'S',rng.randint(1,30),round(rng.uniform(8,45),2)));mid+=1
-salvar('clientes.csv',['codcli','cliente','cidade'],clientes)
-salvar('produtos.csv',['codprod','codfab','descricao','codfornec','unidades_por_caixa'],produtos)
-salvar('notas.csv',['numtransvenda','codcli','codfilial','dtsaida','condvenda','dtcancel'],notas)
-salvar('movimentos.csv',['id','numtransvenda','codprod','codoper','qt','punit'],mov)
-print(f'Dados fictícios: {len(clientes)} clientes, {len(notas)} notas.')
+
+ENTRADA = Path(__file__).resolve().parents[1] / "dados" / "entrada"
+ENTRADA.mkdir(parents=True, exist_ok=True)
+RNG = random.Random(658)
+
+
+def salvar_csv(nome, cabecalho, linhas):
+    caminho = ENTRADA / nome
+    with caminho.open("w", newline="", encoding="utf-8") as arquivo:
+        escritor = csv.writer(arquivo)
+        escritor.writerow(cabecalho)
+        escritor.writerows(linhas)
+
+
+def gerar_dados():
+    cidades = ["São Paulo", "Guarulhos", "Osasco", "Santo André", "Jundiaí"]
+    clientes = [
+        (12000 + numero, f"Cliente exemplo {numero:03d}", RNG.choice(cidades))
+        for numero in range(1, 81)
+    ]
+    produtos = [
+        (20690, "20690", "Pão de queijo tradicional", 658, 12),
+        (20691, "20691", "Pão de queijo coquetel", 658, 10),
+        (20692, "20692", "Waffle congelado", 658, 8),
+        (30185, "30185", "Batata congelada", 7, 6),
+        (30186, "30186", "Vegetais congelados", 7, 10),
+    ]
+
+    notas = []
+    movimentos = []
+    transacao = 100000
+    movimento_id = 1
+
+    for deslocamento in range(150):
+        dia = date(2026, 7, 1) + timedelta(days=deslocamento)
+        if dia > date(2026, 11, 17):
+            break
+
+        for _ in range(RNG.randint(1, 8)):
+            cliente = RNG.choice(clientes)[0]
+            produto = RNG.choice(produtos)
+            transacao += 1
+            condicao = 5 if RNG.random() < 0.08 else 1
+            cancelamento = dia.isoformat() if RNG.random() < 0.025 else ""
+
+            notas.append(
+                (transacao, cliente, 1, dia.isoformat(), condicao, cancelamento)
+            )
+            movimentos.append(
+                (
+                    movimento_id,
+                    transacao,
+                    produto[0],
+                    "S",
+                    RNG.randint(1, 30),
+                    round(RNG.uniform(8, 45), 2),
+                )
+            )
+            movimento_id += 1
+
+    salvar_csv("clientes.csv", ["codcli", "cliente", "cidade"], clientes)
+    salvar_csv(
+        "produtos.csv",
+        ["codprod", "codfab", "descricao", "codfornec", "unidades_por_caixa"],
+        produtos,
+    )
+    salvar_csv(
+        "notas.csv",
+        ["numtransvenda", "codcli", "codfilial", "dtsaida", "condvenda", "dtcancel"],
+        notas,
+    )
+    salvar_csv(
+        "movimentos.csv",
+        ["id", "numtransvenda", "codprod", "codoper", "qt", "punit"],
+        movimentos,
+    )
+    print(f"Dados fictícios gerados: {len(clientes)} clientes e {len(notas)} notas.")
+
+
+if __name__ == "__main__":
+    gerar_dados()

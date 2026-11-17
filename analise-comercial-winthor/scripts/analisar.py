@@ -85,78 +85,152 @@ def gerar_excel(tabelas):
 
 
 def executar():
-    cfg, ref, inicio, fim = ler_config()
-    # Banco temporário: cada execução começa limpa, sem duplicar registros.
-    con = sqlite3.connect(':memory:')
-    try:
-        con.executescript((ROOT / 'sql' / '01_estrutura.sql').read_text(encoding='utf-8'))
-        for nome in ('clientes', 'produtos', 'notas', 'movimentos'):
-            caminho = ENTRADA / f'{nome}.csv'
-            with caminho.open(encoding='utf-8-sig', newline='') as f:
-                leitor = csv.DictReader(f)
-                linhas = list(leitor)
+    """Executa as consultas sobre uma base temporária, sem tabelas duplicadas."""
+    cfg, referencia, inicio_produto, fim_produto = ler_config()
+    filial = int(cfg["filial"])
+    fornecedor = int(cfg["fornecedor"])
+    produto = int(cfg["produto"])
+    dias = int(cfg["dias_sem_compra"])
+    if dias <= 0:
+        raise ValueError("dias_sem_compra precisa ser positivo")
+
+    inicio_clientes = (referencia - timedelta(days=dias)).isoformat()
+    fim_clientes = referencia.isoformat()  # limite exclusivo
+    fim_produto_exclusivo = (fim_produto + timedelta(days=1)).isoformat()
+
+    # O banco é recriado em memória em cada execução. Nenhum .db precisa ser apagado.
+    with sqlite3.connect(":memory:") as conexao:
+        conexao.execute("PRAGMA foreign_keys = ON")
+        estrutura = (ROOT / "sql" / "01_estrutura.sql").read_text(encoding="utf-8")
+        conexao.executescript(estrutura)
+
+        for tabela in ("clientes", "produtos", "notas", "movimentos"):
+            caminho = ENTRADA / f"{tabela}.csv"
+            with caminho.open(encoding="utf-8-sig", newline="") as arquivo:
+                leitor = csv.DictReader(arquivo)
                 colunas = leitor.fieldnames
+                registros = list(leitor)
+
             if not colunas:
-                raise ValueError(f'Arquivo sem cabeçalho: {caminho}')
-            if linhas:
-                marcadores = ','.join('?' for _ in colunas)
-                con.executemany(f'INSERT INTO {nome} ({",".join(colunas)}) VALUES ({marcadores})',
-                                [[r[c] if r[c] != '' else None for c in colunas] for r in linhas])
-        filial = int(cfg['filial'])
-        fornecedor = int(cfg['fornecedor'])
-        produto = int(cfg['produto'])
-        dias = int(cfg['dias_sem_compra'])
-        if dias <= 0:
-            raise ValueError('dias_sem_compra precisa ser positivo')
-        data_inicio = (ref - timedelta(days=dias)).isoformat()
-        data_fim = ref.isoformat()  # exclusiva
-        sql_clientes = '''SELECT c.codcli, c.cliente, c.cidade FROM clientes c
-          WHERE NOT EXISTS (SELECT 1 FROM notas n
-          JOIN movimentos m ON m.numtransvenda=n.numtransvenda
-          JOIN produtos p ON p.codprod=m.codprod
-          WHERE n.codcli=c.codcli AND n.codfilial=? AND p.codfornec=?
-          AND n.condvenda=1 AND n.dtcancel IS NULL AND m.codoper='S'
-          AND n.dtsaida>=? AND n.dtsaida<?) ORDER BY c.cliente'''
-        sql_produto = '''SELECT p.codprod, p.descricao,
-          SUM(CASE WHEN n.condvenda=1 THEN m.qt ELSE 0 END) unidades_vendidas,
-          SUM(CASE WHEN n.condvenda=5 THEN m.qt ELSE 0 END) unidades_bonificadas,
-          ROUND(SUM(CASE WHEN n.condvenda=1 THEN m.qt*m.punit ELSE 0 END),2) faturamento,
-          CASE WHEN p.unidades_por_caixa>0 THEN ROUND(1.0*SUM(CASE WHEN n.condvenda=1 THEN m.qt ELSE 0 END)/p.unidades_por_caixa,2) END caixas_equivalentes
-          FROM notas n JOIN movimentos m ON m.numtransvenda=n.numtransvenda
-          JOIN produtos p ON p.codprod=m.codprod
-          WHERE p.codprod=? AND n.codfilial=? AND n.dtcancel IS NULL
-          AND m.codoper='S' AND n.condvenda IN (1,5)
-          AND n.dtsaida>=? AND n.dtsaida<?
-          GROUP BY p.codprod,p.descricao,p.unidades_por_caixa'''
-        sql_resumo = '''SELECT p.codfornec, COUNT(DISTINCT n.numtransvenda) notas,
-          SUM(m.qt) unidades, ROUND(SUM(m.qt*m.punit),2) faturamento
-          FROM notas n JOIN movimentos m ON m.numtransvenda=n.numtransvenda
-          JOIN produtos p ON p.codprod=m.codprod
-          WHERE n.codfilial=? AND n.dtcancel IS NULL AND n.condvenda=1
-          AND m.codoper='S' AND n.dtsaida>=? AND n.dtsaida<?
-          GROUP BY p.codfornec ORDER BY faturamento DESC'''
+                raise ValueError(f"Arquivo sem cabeçalho: {caminho}")
+            if not registros:
+                continue
+
+            marcadores = ", ".join("?" for _ in colunas)
+            nomes_colunas = ", ".join(colunas)
+            consulta = f"INSERT INTO {tabela} ({nomes_colunas}) VALUES ({marcadores})"
+            valores = [
+                [registro[coluna] or None for coluna in colunas]
+                for registro in registros
+            ]
+            conexao.executemany(consulta, valores)
+
+        sql_clientes = """
+            SELECT c.codcli, c.cliente, c.cidade
+            FROM clientes AS c
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM notas AS n
+                JOIN movimentos AS m ON m.numtransvenda = n.numtransvenda
+                JOIN produtos AS p ON p.codprod = m.codprod
+                WHERE n.codcli = c.codcli
+                  AND n.codfilial = ?
+                  AND p.codfornec = ?
+                  AND n.condvenda = 1
+                  AND n.dtcancel IS NULL
+                  AND m.codoper = 'S'
+                  AND n.dtsaida >= ?
+                  AND n.dtsaida < ?
+            )
+            ORDER BY c.cliente
+        """
+
+        sql_produto = """
+            SELECT
+                p.codprod,
+                p.descricao,
+                SUM(CASE WHEN n.condvenda = 1 THEN m.qt ELSE 0 END)
+                    AS unidades_vendidas,
+                SUM(CASE WHEN n.condvenda = 5 THEN m.qt ELSE 0 END)
+                    AS unidades_bonificadas,
+                ROUND(SUM(CASE WHEN n.condvenda = 1 THEN m.qt * m.punit ELSE 0 END), 2)
+                    AS faturamento,
+                CASE WHEN p.unidades_por_caixa > 0 THEN
+                    ROUND(
+                        1.0 * SUM(CASE WHEN n.condvenda = 1 THEN m.qt ELSE 0 END)
+                        / p.unidades_por_caixa,
+                        2
+                    )
+                END AS caixas_equivalentes
+            FROM notas AS n
+            JOIN movimentos AS m ON m.numtransvenda = n.numtransvenda
+            JOIN produtos AS p ON p.codprod = m.codprod
+            WHERE p.codprod = ?
+              AND n.codfilial = ?
+              AND n.dtcancel IS NULL
+              AND m.codoper = 'S'
+              AND n.condvenda IN (1, 5)
+              AND n.dtsaida >= ?
+              AND n.dtsaida < ?
+            GROUP BY p.codprod, p.descricao, p.unidades_por_caixa
+        """
+
+        sql_resumo = """
+            SELECT
+                p.codfornec,
+                COUNT(DISTINCT n.numtransvenda) AS notas,
+                SUM(m.qt) AS unidades,
+                ROUND(SUM(m.qt * m.punit), 2) AS faturamento
+            FROM notas AS n
+            JOIN movimentos AS m ON m.numtransvenda = n.numtransvenda
+            JOIN produtos AS p ON p.codprod = m.codprod
+            WHERE n.codfilial = ?
+              AND n.dtcancel IS NULL
+              AND n.condvenda = 1
+              AND m.codoper = 'S'
+              AND n.dtsaida >= ?
+              AND n.dtsaida < ?
+            GROUP BY p.codfornec
+            ORDER BY faturamento DESC
+        """
+
         consultas = [
-            ('clientes_sem_compra_658.csv', 'Clientes sem compra', sql_clientes, (filial, fornecedor, data_inicio, data_fim)),
-            ('produto_20690.csv', 'Produto analisado', sql_produto, (produto, filial, inicio.isoformat(), (fim + timedelta(days=1)).isoformat())),
-            ('resumo_fornecedor.csv', 'Resumo fornecedor', sql_resumo, (filial, data_inicio, data_fim)),
+            (
+                "clientes_sem_compra_658.csv",
+                "Clientes sem compra",
+                sql_clientes,
+                (filial, fornecedor, inicio_clientes, fim_clientes),
+            ),
+            (
+                "produto_20690.csv",
+                "Produto analisado",
+                sql_produto,
+                (produto, filial, inicio_produto.isoformat(), fim_produto_exclusivo),
+            ),
+            (
+                "resumo_fornecedor.csv",
+                "Resumo fornecedor",
+                sql_resumo,
+                (filial, inicio_clientes, fim_clientes),
+            ),
         ]
+
         tabelas = []
-        print('Atualizando relatórios...')
-        for arquivo, aba, consulta, parametros in consultas:
-            cur = con.execute(consulta, parametros)
-            cab = [c[0] for c in cur.description]
-            linhas = cur.fetchall()
-            exportar_csv(arquivo, cab, linhas)
-            tabelas.append((aba, cab, linhas))
+        print("Atualizando relatórios...")
+        for nome_arquivo, nome_aba, consulta, parametros in consultas:
+            cursor = conexao.execute(consulta, parametros)
+            cabecalho = [coluna[0] for coluna in cursor.description]
+            linhas = cursor.fetchall()
+            exportar_csv(nome_arquivo, cabecalho, linhas)
+            tabelas.append((nome_aba, cabecalho, linhas))
+
         gerar_excel(tabelas)
-        print('Concluído. Bonificações e cancelamentos não entram no faturamento.')
-    finally:
-        con.close()
+        print("Concluído. Notas canceladas e bonificações não entram no faturamento.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         executar()
     except (OSError, sqlite3.Error, ValueError, KeyError) as erro:
-        print(f'ERRO: {erro}', file=sys.stderr)
+        print(f"ERRO: {erro}", file=sys.stderr)
         sys.exit(1)
