@@ -1,1 +1,2 @@
-artifact-tool
+# O projeto utiliza somente bibliotecas nativas do Python.
+# Nao e necessario instalar dependencias com pip.
